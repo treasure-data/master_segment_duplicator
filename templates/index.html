@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Treasure Data Segment Master Segment Duplicator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f3f5fa;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: linear-gradient(90deg, #0072ce, #6c2dc7);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header img {
+      height: 42px;
+    }
+
+    .container {
+      background-color: #ffffff;
+      margin: 60px auto;
+      padding: 40px 50px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      width: 100%;
+      max-width: 600px;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 30px;
+      font-size: 26px;
+      text-align: center;
+      color: #333;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #222;
+    }
+
+    input[type='text'],
+    select {
+      width: 100%;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    input[type='text']:focus,
+    select:focus {
+      outline: none;
+      border-color: #6c2dc7;
+      box-shadow: 0 0 0 2px rgba(108, 45, 199, 0.1);
+    }
+
+    /* Checkbox label styling */
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      margin-bottom: 14px;
+      font-weight: 600;
+      color: #222;
+    }
+
+    .checkbox-label input[type='checkbox'] {
+      margin-right: 8px;
+      transform: scale(1.2);
+      cursor: pointer;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(90deg, #0072ce, #6c2dc7);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: linear-gradient(90deg, #005bb5, #581eac);
+    }
+
+    #message {
+      margin-top: 24px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 16px;
+      color: #444;
+    }
+
+    /* Status box styling */
+    .status-box {
+      display: none;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      background-color: #f8f9fa;
+      border: 1px solid #dee2e6;
+    }
+
+    .status-box.show {
+      display: block;
+    }
+
+    .status-box .status-header {
+      font-weight: bold;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-box .status-content {
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+
+    .status-error {
+      background-color: #fff5f5;
+      border-color: #fc8181;
+    }
+
+    .status-success {
+      background-color: #f0fff4;
+      border-color: #68d391;
+    }
+
+    .status-progress {
+      background-color: #ebf8ff;
+      border-color: #63b3ed;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(0, 0, 0, 0.1);
+      border-radius: 50%;
+      border-top-color: #0072ce;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="/static/logo.png" alt="Treasure Data Logo" />
+  </header>
+
+  <div class="container">
+    <h1>Master Segment Duplicator</h1>
+
+    <form id="myForm" novalidate>
+      <!-- 1) Master Segment ID -->
+      <label for="masterSegmentId">Input Master Segment ID</label>
+      <input type="text" id="masterSegmentId" name="masterSegmentId" required />
+
+      <!-- 2) API Key -->
+      <label for="apiKey">Input API Key</label>
+      <input type="text" id="apiKey" name="apiKey" required />
+
+      <!-- 3) Instance (Dropdown) -->
+      <label for="instance">Instance</label>
+      <select id="instance" name="instance" required>
+        <option value="US">US</option>
+        <option value="EMEA">EMEA</option>
+        <option value="Japan">Japan</option>
+        <option value="Korea">Korea</option>
+      </select>
+
+      <!-- 4) Output Master Segment ID -->
+      <label for="outputMasterSegmentId">Output Master Segment ID</label>
+      <input type="text" id="outputMasterSegmentId" name="outputMasterSegmentId" required />
+
+      <!-- 5) Output Master Segment Name -->
+      <label for="masterSegmentName">Output Master Segment Name</label>
+      <input type="text" id="masterSegmentName" name="masterSegmentName" required />
+
+      <!-- 6) Output API Key -->
+      <label for="apiKeyOutput">Output API Key</label>
+      <input type="text" id="apiKeyOutput" name="apiKeyOutput" required />
+
+      <!-- 7) Checkbox for Copy Audience Studio Assets -->
+      <label class="checkbox-label" for="copyAssets">
+        <input type="checkbox" id="copyAssets" name="copyAssets" />
+        Copy Audience Studio Assets (Folder, Segments, etc..)
+      </label>
+
+      <!-- 8) Checkbox for Copy Data Assets -->
+      <label class="checkbox-label" for="copyDataAssets">
+        <input type="checkbox" id="copyDataAssets" name="copyDataAssets" />
+        Copy Data Assets (Databases, Tables, etc..)
+      </label>
+
+      <button type="submit">Submit</button>
+    </form>
+
+    <div id="status-box" class="status-box">
+      <div class="status-header">
+        <span id="status-title">Processing...</span>
+        <div id="status-spinner" class="spinner"></div>
+      </div>
+      <div id="status-content" class="status-content"></div>
+    </div>
+
+    <p id="message"></p>
+  </div>
+
+  <!-- Link your compiled or raw JS -->
+  <script src="/static/script.js"></script>
+</body>
+</html>
