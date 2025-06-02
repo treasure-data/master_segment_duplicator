@@ -1,7 +1,7 @@
 """
 backend.py
 ---------
-FastAPI-based web server that provides a web interface and API endpoints for 
+FastAPI-based web server that provides a web interface and API endpoints for
 the Treasure Data segment copying tool.
 
 This module serves as the bridge between the web frontend and the copier.py script.
@@ -10,173 +10,234 @@ It provides:
 2. HTML template serving for the main interface
 3. Streaming API endpoint for segment copy operations
 4. Real-time progress updates via server-sent events
-
-Dependencies:
-- fastapi: Web framework for API endpoints
-- uvicorn: ASGI server implementation
-- asyncio: For asynchronous subprocess handling
 """
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 import asyncio
 import json
 import os
+from typing import AsyncGenerator, Optional
+
+
+# Define request model
+class CopyRequest(BaseModel):
+    masterSegmentId: str
+    apiKey: str
+    instance: str
+    # outputMasterSegmentId: str
+    masterSegmentName: str
+    apiKeyOutput: str
+    copyAssets: bool = False  # Default value and explicit type
+    copyDataAssets: bool = False  # Default value and explicit type
+
+    class Config:
+        json_encoders = {
+            bool: lambda v: str(v).lower()  # Convert boolean to lowercase string
+        }
+
 
 app = FastAPI(
     title="Treasure Data Segment Copier",
     description="Web interface for copying Treasure Data segments between environments",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Serve static files (JavaScript, CSS, images) from the static directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+
 @app.get("/", response_class=HTMLResponse)
 def get_form():
     """
     Serves the main HTML interface for the segment copier tool.
-    
+
     Returns:
         str: HTML content of the main interface
     """
     with open("templates/index.html", "r", encoding="utf-8") as f:
         return f.read()
 
-async def process_stream(proc):
+
+@app.get("/favicon.ico")
+async def favicon():
     """
-    Processes stdout/stderr streams from the copier script and yields formatted updates.
-    
-    This function handles the real-time output from the copier script, formats it
-    as JSON messages, and streams it back to the client. It supports different
-    message types (progress, error, success) and proper error handling.
-    
-    Args:
-        proc: AsyncIO subprocess object running the copier script
-        
-    Yields:
-        str: JSON-formatted status updates for the client
-    """
-    async def read_stream(stream, prefix=""):
-        """
-        Reads and formats output from a subprocess stream.
-        
-        Args:
-            stream: AsyncIO stream (stdout/stderr)
-            prefix: Optional prefix for messages (e.g., "Error: " for stderr)
-            
-        Yields:
-            str: JSON-formatted status update
-        """
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            line = line.decode().strip()
-            if line:
-                # Format the message as JSON with type and content
-                update = {
-                    "type": "progress" if "⚠️" not in line else "error",
-                    "message": f"{prefix}{line}"
-                }
-                yield json.dumps(update) + "\n"
+    Serves the favicon.ico file from the static directory.
 
-    # Create tasks for reading both stdout and stderr
-    stdout_task = asyncio.create_task(read_stream(proc.stdout))
-    stderr_task = asyncio.create_task(read_stream(proc.stderr, "Error: "))
-
-    # Wait for both streams to complete
-    done, pending = await asyncio.wait(
-        [stdout_task, stderr_task],
-        return_when=asyncio.ALL_COMPLETED
-    )
-
-    # Cancel any pending tasks
-    for task in pending:
-        task.cancel()
-
-    # Get the return code and send final status
-    await proc.wait()
-    
-    # Send final status message based on exit code
-    if proc.returncode == 0:
-        yield json.dumps({
-            "type": "success",
-            "message": "Process completed successfully!"
-        }) + "\n"
-    else:
-        yield json.dumps({
-            "type": "error",
-            "message": f"Process failed with exit code {proc.returncode}"
-        }) + "\n"
-
-@app.post("/submit")
-async def submit_form(request: Request):
-    """
-    Handles form submission and initiates the segment copy process.
-    
-    This endpoint:
-    1. Receives form data from the client
-    2. Validates and processes the input
-    3. Starts the copier script as a subprocess
-    4. Streams real-time updates back to the client
-    
-    Args:
-        request (Request): FastAPI request object containing form data
-        
     Returns:
-        StreamingResponse: Server-sent events stream with process updates
+        FileResponse: The favicon file response
     """
+    return FileResponse("static/favicon.ico")
+
+
+async def process_stream(proc) -> AsyncGenerator[str, None]:
+    """Process stdout/stderr streams and yield formatted updates."""
     try:
-        data = await request.json()
+        while True:
+            # Read from stdout
+            stdout_line = await proc.stdout.readline()
+            if stdout_line:
+                line = stdout_line.decode().strip()
+                if line:
+                    yield json.dumps(
+                        {
+                            "type": "progress" if "⚠️" not in line else "error",
+                            "message": line,
+                        }
+                    )
 
-        # Extract form fields
-        master_segment_id = data.get("masterSegmentId")
-        api_key = data.get("apiKey")
-        instance = data.get("instance")
-        output_segment_id = data.get("outputMasterSegmentId")
-        master_segment_name = data.get("masterSegmentName")
-        api_key_output = data.get("apiKeyOutput")
-        copy_assets = data.get("copyAssets")
-        copy_data_assets = data.get("copyDataAssets")
+            # Read from stderr
+            stderr_line = await proc.stderr.readline()
+            if stderr_line:
+                line = stderr_line.decode().strip()
+                if line:
+                    yield json.dumps({"type": "error", "message": f"Error: {line}"})
 
-        # Convert boolean flags to strings for CLI
-        copy_assets_str = str(copy_assets)
-        copy_data_assets_str = str(copy_data_assets)
+            # Check if process is still running
+            if proc.stdout.at_eof() and proc.stderr.at_eof():
+                break
 
-        # Create subprocess running the copier script
-        proc = await asyncio.create_subprocess_exec(
-            "python3", "copier.py",
-            master_segment_id,
-            api_key,
-            instance,
-            output_segment_id,
-            master_segment_name,
-            api_key_output,
-            copy_assets_str,
-            copy_data_assets_str,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        # Wait for process to complete
+        await proc.wait()
+
+        # Send final status
+        yield json.dumps(
+            {
+                "type": "success" if proc.returncode == 0 else "error",
+                "message": (
+                    "Process completed successfully!"
+                    if proc.returncode == 0
+                    else f"Process failed with exit code {proc.returncode}"
+                ),
+            }
+        )
+    except Exception as e:
+        yield json.dumps(
+            {"type": "error", "message": f"Error processing stream: {str(e)}"}
         )
 
-        # Return streaming response with real-time updates
+
+@app.get("/submit")
+async def submit_form(
+    request: Request,
+    masterSegmentId: str,
+    apiKey: str,
+    instance: str,
+    # outputMasterSegmentId: str,
+    masterSegmentName: str,
+    apiKeyOutput: str,
+    copyAssets: bool,
+    copyDataAssets: bool,
+):
+    """
+    Handles form submission via query parameters and streams responses.
+
+    Args:
+        request: FastAPI request object
+        masterSegmentId: ID of the master segment
+        apiKey: API key for authentication
+        instance: Instance name
+        outputMasterSegmentId: ID of the output master segment
+        masterSegmentName: Name of the master segment
+        apiKeyOutput: API key for the output environment
+        copyAssets: Flag to copy assets
+        copyDataAssets: Flag to copy data assets
+
+    Returns:
+        StreamingResponse: Real-time progress updates
+    """
+    try:
+        # Create subprocess running the copier script
+        proc = await asyncio.create_subprocess_exec(
+            "python3",
+            "copier.py",
+            masterSegmentId,
+            apiKey,
+            instance,
+            # outputMasterSegmentId,
+            masterSegmentName,
+            apiKeyOutput,
+            str(copyAssets).lower(),
+            str(copyDataAssets).lower(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def event_generator():
+            async for data in process_stream(proc):
+                yield f"data: {data}\n\n"
+
+        # Return streaming response with proper SSE format
         return StreamingResponse(
-            process_stream(proc),
-            media_type="text/event-stream"
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
         )
 
     except Exception as e:
+        error_message = f"Failed to start process: {str(e)}"
+        error_json = json.dumps({"type": "error", "message": error_message})
         # Return immediate error response for startup failures
         return StreamingResponse(
-            iter([json.dumps({
-                "type": "error",
-                "message": f"Failed to start process: {str(e)}"
-            }) + "\n"]),
-            media_type="text/event-stream"
+            iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
         )
 
 
+@app.post("/submit")
+async def submit_form(request: CopyRequest):
+    """
+    Handles form submission via POST request and streams responses.
 
+    Args:
+        request (CopyRequest): The copy request parameters
 
+    Returns:
+        StreamingResponse: Real-time progress updates
+    """
+    try:
+        # Create subprocess running the copier script
+        proc = await asyncio.create_subprocess_exec(
+            "python3",
+            "copier.py",
+            request.masterSegmentId,
+            request.apiKey,
+            request.instance,
+            # request.outputMasterSegmentId,
+            request.masterSegmentName,
+            request.apiKeyOutput,
+            str(
+                request.copyAssets
+            ).lower(),  # Ensure boolean is converted to lowercase string
+            str(
+                request.copyDataAssets
+            ).lower(),  # Ensure boolean is converted to lowercase string
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
+        async def event_generator():
+            async for data in process_stream(proc):
+                yield f"data: {data}\n\n"
+
+        # Return streaming response with proper SSE format
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+
+    except Exception as e:
+        error_message = f"Failed to start process: {str(e)}"
+        error_json = json.dumps({"type": "error", "message": error_message})
+        # Return immediate error response for startup failures
+        return StreamingResponse(
+            iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
+        )

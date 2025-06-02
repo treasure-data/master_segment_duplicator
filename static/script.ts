@@ -5,7 +5,7 @@ interface CopyFormData {
     masterSegmentId: string;
     apiKey: string;
     instance: string;
-    outputMasterSegmentId: string;
+    // outputMasterSegmentId: string;
     masterSegmentName: string;
     apiKeyOutput: string;
     copyAssets: boolean;
@@ -28,21 +28,27 @@ document.addEventListener("DOMContentLoaded", () => {
         statusBox: getElement<HTMLDivElement>("status-box"),
         statusTitle: getElement<HTMLSpanElement>("status-title"),
         statusContent: getElement<HTMLDivElement>("status-content"),
-        statusSpinner: getElement<HTMLDivElement>("status-spinner")
+        statusSpinner: getElement<HTMLDivElement>("status-spinner"),
     };
 
     /**
      * Updates the status display with new information
      */
-    function updateStatus(title: string, content?: string, type: 'progress' | 'error' | 'success' = 'progress'): void {
+    function updateStatus(
+        title: string,
+        content?: string,
+        type: "progress" | "error" | "success" = "progress"
+    ): void {
         elements.statusBox.className = `status-box show status-${type}`;
         elements.statusTitle.textContent = title;
-        
+
         if (content) {
             elements.statusContent.textContent += `${content}\n`;
-            elements.statusContent.scrollTop = elements.statusContent.scrollHeight;
+            elements.statusContent.scrollTop =
+                elements.statusContent.scrollHeight;
         }
-        elements.statusSpinner.style.display = type === 'progress' ? 'block' : 'none';
+        elements.statusSpinner.style.display =
+            type === "progress" ? "block" : "none";
     }
 
     /**
@@ -50,70 +56,93 @@ document.addEventListener("DOMContentLoaded", () => {
      */
     function getFormData(): CopyFormData {
         return {
-            masterSegmentId: getElement<HTMLInputElement>("masterSegmentId").value,
+            masterSegmentId:
+                getElement<HTMLInputElement>("masterSegmentId").value,
             apiKey: getElement<HTMLInputElement>("apiKey").value,
             instance: getElement<HTMLSelectElement>("instance").value,
-            outputMasterSegmentId: getElement<HTMLInputElement>("outputMasterSegmentId").value,
-            masterSegmentName: getElement<HTMLInputElement>("masterSegmentName").value,
+            // outputMasterSegmentId: getElement<HTMLInputElement>("outputMasterSegmentId").value,
+            masterSegmentName:
+                getElement<HTMLInputElement>("masterSegmentName").value,
             apiKeyOutput: getElement<HTMLInputElement>("apiKeyOutput").value,
             copyAssets: getElement<HTMLInputElement>("copyAssets").checked,
-            copyDataAssets: getElement<HTMLInputElement>("copyDataAssets").checked
+            copyDataAssets:
+                getElement<HTMLInputElement>("copyDataAssets").checked,
         };
-    }
-
-    /**
-     * Processes the streaming response data
-     */
-    async function processStreamResponse(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
-        const decoder = new TextDecoder();
-        
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            
-            const updates = decoder.decode(value)
-                .split('\n')
-                .filter(line => line.trim())
-                .forEach(update => {
-                    try {
-                        const data = JSON.parse(update);
-                        const type = data.type as 'error' | 'success' | 'progress';
-                        updateStatus(
-                            data.type === 'error' ? 'Error Occurred' :
-                            data.type === 'success' ? 'Success!' : 'Processing...',
-                            data.message,
-                            type
-                        );
-                    } catch (e) {
-                        console.error('Error parsing update:', e);
-                        updateStatus('Processing...', update, 'progress');
-                    }
-                });
-        }
     }
 
     elements.form.addEventListener("submit", async (event: Event) => {
         event.preventDefault();
-        elements.statusContent.textContent = '';
+        elements.statusContent.textContent = "";
         updateStatus("Starting process...");
 
         try {
+            const formData = getFormData();
+
+            // Create single EventSource connection with JSON POST request
             const response = await fetch("/submit", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(getFormData())
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(formData),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const reader = response.body?.getReader();
-            if (!reader) throw new Error("Failed to get response reader");
-            
-            await processStreamResponse(reader);
+            const decoder = new TextDecoder();
+
+            while (reader) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split("\n");
+
+                for (const line of lines) {
+                    if (line.startsWith("data: ")) {
+                        const eventData = line.slice(6);
+                        try {
+                            const data = JSON.parse(eventData);
+                            const type = data.type as
+                                | "error"
+                                | "success"
+                                | "progress";
+                            updateStatus(
+                                data.type === "error"
+                                    ? "Error Occurred"
+                                    : data.type === "success"
+                                    ? "Success!"
+                                    : "Processing...",
+                                data.message,
+                                type
+                            );
+
+                            if (type === "success" || type === "error") {
+                                reader.cancel();
+                            }
+                        } catch (e) {
+                            console.error("Error parsing event data:", e);
+                            updateStatus(
+                                "Error Occurred",
+                                "Failed to parse server response",
+                                "error"
+                            );
+                            reader.cancel();
+                        }
+                    }
+                }
+            }
         } catch (error) {
-            console.error("Error submitting form:", error);
+            console.error("Error starting process:", error);
             updateStatus(
-                'Error Occurred',
-                `An error occurred: ${error instanceof Error ? error.message : String(error)}`,
-                'error'
+                "Error Occurred",
+                `An error occurred: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+                "error"
             );
         }
     });
