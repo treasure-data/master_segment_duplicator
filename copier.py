@@ -75,11 +75,20 @@ from parent_segment_api import ps_check_and_update
 
 # Set up logging
 logging.basicConfig(
-    filename="poc_hub.log",
-    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler("poc_hub.log"),
+        logging.StreamHandler(),  # This will output to stdout as well
+    ],
+    force=True,  # Override any existing logging configuration
 )
 logger = logging.getLogger(__name__)
+
+# Set stdout to line buffering for real-time output
+import sys
+
+sys.stdout.reconfigure(line_buffering=True)
 
 # API Configuration Constants
 TD_MIME = "application/vnd.treasuredata.v1+json"
@@ -1336,12 +1345,12 @@ def main():
     Main entry point for the segment copy process.
     Parses CLI arguments and orchestrates the copy operations.
     """
-    if len(sys.argv) < 9:
+    if len(sys.argv) < 8:
         print(
             "Usage: python copier.py "
             "<src_parent_id> <src_api_key> "
             "<instance> "
-            "<dst_parent_id> <dst_parent_name> <dst_api_key> "
+            "<dst_parent_name> <dst_api_key> "
             "<copy_assets_flag> <copy_data_assets_flag>"
         )
         sys.exit(1)
@@ -1370,7 +1379,7 @@ def main():
     print(f"   • Region: {instance}")
     print(f"   • API Endpoint: {base}")
     print(f"   • Source Segment ID: {src_parent}")
-    print(f"   • Destination: {dst_parent} ('{dst_name}')")
+    print(f"   • Destination:  ('{dst_name}')")
     print(f"   • Copy Assets: {'Yes' if copy_assets else 'No'}")
     print(f"   • Copy Data: {'Yes' if should_copy_data_assets else 'No'}")
     if instance == "US":
@@ -1415,7 +1424,9 @@ def main():
         # 4. Copy folders & segments if requested
         if copy_assets:
             print("\n📁 Starting folder and segment copy phase...")
-            copy_folders_segments(src_client, dst_client, src_parent, dst_parent)
+            audience_id, _, _ = copy_folders_segments(
+                src_client, dst_client, src_parent, audience_id
+            )
             print("✅ Folder and segment copy phase completed")
         else:
             print("\nℹ️  Skipping folders/segments phase (copy_assets=False)")
@@ -1430,4 +1441,13 @@ def main():
 
 
 if __name__ == "__main__":
+    import builtins
+
+    real_print = builtins.print
+
+    def print(*args, **kwargs):
+        """Override print to ensure immediate flushing."""
+        kwargs["flush"] = True
+        real_print(*args, **kwargs)
+
     main()

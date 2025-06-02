@@ -75,117 +75,140 @@ async def favicon():
 async def process_stream(proc) -> AsyncGenerator[str, None]:
     """Process stdout/stderr streams and yield formatted updates."""
     try:
-        while True:
-            # Read from stdout
-            stdout_line = await proc.stdout.readline()
-            if stdout_line:
-                line = stdout_line.decode().strip()
-                if line:
-                    yield json.dumps(
-                        {
-                            "type": "progress" if "⚠️" not in line else "error",
-                            "message": line,
-                        }
-                    )
 
-            # Read from stderr
-            stderr_line = await proc.stderr.readline()
-            if stderr_line:
-                line = stderr_line.decode().strip()
-                if line:
-                    yield json.dumps({"type": "error", "message": f"Error: {line}"})
+        async def read_stream(stream, is_stderr=False):
+            while True:
+                try:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    text = line.decode().strip()
+                    if text:
+                        if is_stderr:
+                            yield json.dumps(
+                                {"type": "error", "message": f"Error: {text}"}
+                            )
+                        else:
+                            yield json.dumps(
+                                {
+                                    "type": "progress" if "⚠️" not in text else "error",
+                                    "message": text,
+                                }
+                            )
+                except Exception as e:
+                    print(f"Stream read error: {e}")
+                    break
 
-            # Check if process is still running
-            if proc.stdout.at_eof() and proc.stderr.at_eof():
-                break
+        # Create separate tasks for reading stdout and stderr
+        stdout_gen = read_stream(proc.stdout)
+        stderr_gen = read_stream(proc.stderr, is_stderr=True)
 
-        # Wait for process to complete
-        await proc.wait()
+        async def merge_streams():
+            async def safe_aiter(agen):
+                try:
+                    async for item in agen:
+                        yield item
+                except Exception as e:
+                    print(f"Stream iteration error: {e}")
 
-        # Send final status
+            # Merge both streams
+            async for result in safe_aiter(stdout_gen):
+                yield result
+            async for result in safe_aiter(stderr_gen):
+                yield result
+
+        async for item in merge_streams():
+            yield item
+
+        # Wait for process to complete and capture return code
+        return_code = await proc.wait()
+
+        # Send final status after all stream processing is done
         yield json.dumps(
             {
-                "type": "success" if proc.returncode == 0 else "error",
+                "type": "success" if return_code == 0 else "error",
                 "message": (
                     "Process completed successfully!"
-                    if proc.returncode == 0
-                    else f"Process failed with exit code {proc.returncode}"
+                    if return_code == 0
+                    else f"Process failed with exit code {return_code}"
                 ),
             }
         )
     except Exception as e:
+        error_msg = str(e)
+        print(f"Stream processing error: {error_msg}")
         yield json.dumps(
-            {"type": "error", "message": f"Error processing stream: {str(e)}"}
+            {"type": "error", "message": f"Error processing stream: {error_msg}"}
         )
 
 
-@app.get("/submit")
-async def submit_form(
-    request: Request,
-    masterSegmentId: str,
-    apiKey: str,
-    instance: str,
-    # outputMasterSegmentId: str,
-    masterSegmentName: str,
-    apiKeyOutput: str,
-    copyAssets: bool,
-    copyDataAssets: bool,
-):
-    """
-    Handles form submission via query parameters and streams responses.
+# @app.get("/submit")
+# async def submit_form(
+#     request: Request,
+#     masterSegmentId: str,
+#     apiKey: str,
+#     instance: str,
+#     # outputMasterSegmentId: str,
+#     masterSegmentName: str,
+#     apiKeyOutput: str,
+#     copyAssets: bool,
+#     copyDataAssets: bool,
+# ):
+#     """
+#     Handles form submission via query parameters and streams responses.
 
-    Args:
-        request: FastAPI request object
-        masterSegmentId: ID of the master segment
-        apiKey: API key for authentication
-        instance: Instance name
-        outputMasterSegmentId: ID of the output master segment
-        masterSegmentName: Name of the master segment
-        apiKeyOutput: API key for the output environment
-        copyAssets: Flag to copy assets
-        copyDataAssets: Flag to copy data assets
+#     Args:
+#         request: FastAPI request object
+#         masterSegmentId: ID of the master segment
+#         apiKey: API key for authentication
+#         instance: Instance name
+#         outputMasterSegmentId: ID of the output master segment
+#         masterSegmentName: Name of the master segment
+#         apiKeyOutput: API key for the output environment
+#         copyAssets: Flag to copy assets
+#         copyDataAssets: Flag to copy data assets
 
-    Returns:
-        StreamingResponse: Real-time progress updates
-    """
-    try:
-        # Create subprocess running the copier script
-        proc = await asyncio.create_subprocess_exec(
-            "python3",
-            "copier.py",
-            masterSegmentId,
-            apiKey,
-            instance,
-            # outputMasterSegmentId,
-            masterSegmentName,
-            apiKeyOutput,
-            str(copyAssets).lower(),
-            str(copyDataAssets).lower(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+#     Returns:
+#         StreamingResponse: Real-time progress updates
+#     """
+#     try:
+#         # Create subprocess running the copier script
+#         proc = await asyncio.create_subprocess_exec(
+#             "python3",
+#             "copier.py",
+#             masterSegmentId,
+#             apiKey,
+#             instance,
+#             # outputMasterSegmentId,
+#             masterSegmentName,
+#             apiKeyOutput,
+#             str(copyAssets).lower(),
+#             str(copyDataAssets).lower(),
+#             stdout=asyncio.subprocess.PIPE,
+#             stderr=asyncio.subprocess.PIPE,
+#         )
 
-        async def event_generator():
-            async for data in process_stream(proc):
-                yield f"data: {data}\n\n"
+#         async def event_generator():
+#             async for data in process_stream(proc):
+#                 yield f"data: {data}\n\n"
 
-        # Return streaming response with proper SSE format
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
+#         # Return streaming response with proper SSE format
+#         return StreamingResponse(
+#             event_generator(),
+#             media_type="text/event-stream",
+#             headers={
+#                 "Cache-Control": "no-cache",
+#                 "Connection": "keep-alive",
+#             },
+#         )
 
-    except Exception as e:
-        error_message = f"Failed to start process: {str(e)}"
-        error_json = json.dumps({"type": "error", "message": error_message})
-        # Return immediate error response for startup failures
-        return StreamingResponse(
-            iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
-        )
+#     except Exception as e:
+#         error_message = f"Failed to start process: {str(e)}"
+#         error_json = json.dumps({"type": "error", "message": error_message})
+#         # Return immediate error response for startup failures
+#         return StreamingResponse(
+#             iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
+#         )
 
 
 @app.post("/submit")
