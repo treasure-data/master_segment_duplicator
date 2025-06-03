@@ -167,17 +167,17 @@ class TDClient:
         Raises:
             requests.exceptions.RequestException: For any API request failures
         """
-        print(f"🔗 Preparing {method} request to {path} with API key: {self.api_key}")
+        # print(f"🔗 Preparing {method} request to {path} with API key: {self.api_key}")
         self.rate_limiter.wait()
-        print(f"⏳ Rate limit wait complete, proceeding with {method} request")
+        # print(f"⏳ Rate limit wait complete, proceeding with {method} request")
         url = f"{self.base_url}/{path.lstrip('/')}"
         headers = {"Authorization": f"TD1 {self.api_key}", "Content-Type": TD_MIME}
         headers.update(kwargs.pop("headers", {}))
-        print(f"🔗 Making {method} request to {url} with headers: {headers}")
+        # print(f"🔗 Making {method} request to {url} with headers: {headers}")
         try:
             response = self.session.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
-            print(f"✅ Received response: {response.status_code} from {url}")
+            # print(f"✅ Received response: {response.status_code} from {url}")
             return response.json() if response.content else {}
         except requests.exceptions.RequestException as e:
             print(f"⚠️  API request failed: {e}")
@@ -1092,20 +1092,20 @@ def copy_folders_segments(
 
                     original_name = ent["attributes"]["name"]
                     try:
-                        print(f"/n testing0")
+                        # print(f"/n testing0")
                         # Try with original name first
                         result = dst_client.request(
                             "POST", "entities/folders", json=ent
                         )
-                        print(f"/n testing0.0")
+                        # print(f"/n testing0.0")
                     except requests.exceptions.RequestException as e:
-                        print(f"/n testing0.1")
+                        # print(f"/n testing0.1")
                         if (
                             hasattr(e.response, "status_code")
                             and e.response.status_code == 400
                             and "Name has already been taken" in e.response.text
                         ):
-                            print(f"/n testing0.2")
+                            # print(f"/n testing0.2")
                             # If name conflict, add suffix and retry
                             ent["attributes"][
                                 "name"
@@ -1113,7 +1113,7 @@ def copy_folders_segments(
                             print(
                                 f"    Note: Renaming folder to {ent['attributes']['name']} due to name conflict"
                             )
-                            print(f"/n testing1")
+                            # print(f"/n testing1")
                             result = dst_client.request(
                                 "POST", "entities/folders", json=ent
                             )
@@ -1122,10 +1122,10 @@ def copy_folders_segments(
                             # )
                         else:
                             raise
-                    print(f"/n testing2")
+                    # print(f"/n testing2")
                     new_id = result["data"]["id"]
                     folders_map[fid] = new_id
-                    print(f"/n testing3")
+                    # print(f"/n testing3")
                     print(
                         f"    [{i}/{len(folder_entities)}] {ent['attributes']['name']}  →  {new_id}"
                     )
