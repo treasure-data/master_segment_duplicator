@@ -2,6 +2,8 @@
 
 A web application for copying Treasure Data segments with real-time progress updates. Built with Flask, Socket.IO, and TypeScript.
 
+For detailed EC2 deployment instructions, see [EC2_DEPLOYMENT.md](EC2_DEPLOYMENT.md).
+
 ## Architecture
 
 ### Backend

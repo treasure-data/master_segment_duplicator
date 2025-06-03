@@ -60,3 +60,4 @@ run_*.log.json
 __pycache__/
 static/script.js
 venv/
+*.pem
