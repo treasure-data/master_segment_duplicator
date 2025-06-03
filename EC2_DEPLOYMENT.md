@@ -13,7 +13,8 @@
         ```
         Inbound Rules:
         - SSH (Port 22) from your IP
-        - Custom TCP (Port 8000) from your IP
+        - HTTP (Port 80) from anywhere
+        - Custom TCP (Port 8000) from localhost only
         ```
 
 2. Connect to your EC2 instance:
@@ -70,6 +71,63 @@ curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
+5. Install and Configure Nginx:
+
+```bash
+# For Amazon Linux 2023
+sudo dnf install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# For Ubuntu
+sudo apt install -y nginx
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# Create Nginx configuration
+sudo tee /etc/nginx/conf.d/mscopy.conf << 'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name 34.226.254.185;  # Replace with your EC2 public IP
+
+    # Static files
+    location /static/ {
+        alias /opt/mscopy/static/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    # Proxy all other requests to Gunicorn
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+
+        # WebSocket support
+        proxy_read_timeout 86400;
+    }
+}
+EOF
+
+# Remove default nginx site and any old configurations
+sudo rm -f /etc/nginx/conf.d/default.conf  # For Amazon Linux
+sudo rm -f /etc/nginx/sites-enabled/default  # For Ubuntu
+sudo rm -f /etc/nginx/conf.d/mscopy.conf.bak  # Remove any backup files
+
+# Test nginx configuration
+sudo nginx -t
+
+# Reload nginx
+sudo systemctl reload nginx
+```
+
 ## 3. Application Setup
 
 1. Create application directory:
@@ -85,7 +143,16 @@ sudo chown ${USER}:${USER} /opt/mscopy
 cd /opt/mscopy
 git clone https://github.com/treasure-data/master_segment_duplicator.git .
 chmod +x start_prod.sh rotate_logs.sh
-mkdir logs
+
+# Create and setup logs directory with proper permissions
+mkdir -p logs
+sudo chown -R ec2-user:ec2-user .
+sudo chmod 755 logs
+
+# Create log files with proper permissions
+touch logs/error.log logs/access.log
+chmod 644 logs/error.log logs/access.log
+sudo chown -R ec2-user:ec2-user logs
 ```
 
 3. Create and configure production environment:
@@ -111,6 +178,10 @@ LOG_LEVEL=info
 4. Create systemd service:
 
 ```bash
+# First, get the NVM directory and Node path
+echo "Current Node.js path: $(which node)"
+echo "NVM_DIR: $NVM_DIR"
+
 sudo tee /etc/systemd/system/mscopy.service << 'EOF'
 [Unit]
 Description=Master Segment Copy Application
@@ -120,17 +191,69 @@ After=network.target
 Type=simple
 User=ec2-user
 WorkingDirectory=/opt/mscopy
-ExecStart=/bin/bash start_prod.sh
-Restart=always
-RestartSec=10
-StandardOutput=append:/opt/mscopy/logs/error.log
-StandardError=append:/opt/mscopy/logs/error.log
+
+# Environment setup
+Environment="PATH=/opt/mscopy/venv/bin:/home/ec2-user/.nvm/versions/node/$(node -v)/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="NODE_VERSION=$(node -v)"
+Environment="NVM_DIR=/home/ec2-user/.nvm"
+Environment="NODE_PATH=/home/ec2-user/.nvm/versions/node/$(node -v)/lib/node_modules"
 Environment="FLASK_ENV=production"
 Environment="FLASK_APP=backend.py"
+
+# The ExecStartPre ensures dependencies are installed and built
+ExecStartPre=/bin/bash -c 'source /opt/mscopy/venv/bin/activate && pip install -r requirements.txt'
+ExecStartPre=/bin/bash -c 'npm install && npm run build'
+
+# The main process
+ExecStart=/opt/mscopy/venv/bin/gunicorn \
+    --workers 3 \
+    --worker-class gevent \
+    --timeout 120 \
+    --bind 0.0.0.0:8000 \
+    --access-logfile /opt/mscopy/logs/access.log \
+    --error-logfile /opt/mscopy/logs/error.log \
+    --log-level info \
+    backend:app
+
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# sudo tee /etc/systemd/system/mscopy.service << 'EOF'
+# [Unit]
+# Description=Master Segment Copy Application
+# After=network.target
+
+# [Service]
+# Type=simple
+# User=ec2-user
+# WorkingDirectory=/opt/mscopy
+
+# # Environment setup
+# Environment="PATH=/opt/mscopy/venv/bin:/home/ec2-user/.nvm/versions/node/v22.16.0/bin:/usr/local/bin:/usr/bin:/bin"
+# Environment="NODE_VERSION=$(node -v)"
+# Environment="NVM_DIR=/home/ec2-user/.nvm"
+# Environment="NODE_PATH=/home/ec2-user/.nvm/versions/node/$(node -v)/lib/node_modules"
+# Environment="FLASK_ENV=production"
+# Environment="FLASK_APP=backend.py"
+
+# ExecStart=/bin/bash start_prod.sh
+
+# Restart=always
+# RestartSec=10
+
+# StandardOutput=append:/opt/mscopy/logs/error.log
+# StandardError=append:/opt/mscopy/logs/error.log
+
+# [Install]
+# WantedBy=multi-user.target
+# EOF
+# Reload systemd and restart the service
+sudo systemctl daemon-reload
+sudo systemctl restart mscopy
 ```
 
 5. Enable and start the service:

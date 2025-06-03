@@ -511,14 +511,12 @@ _export:
     return filepath
 
 
-from pathlib import Path
+# from pathlib import Path
 
 
 def get_project_folder():
     """Returns the absolute path to the project folder."""
-    # current_file_path = os.path.abspath(__file__)
-    # project_folder = os.path.dirname(os.path.dirname(current_file_path))
-    return Path(os.getcwd()).parent.parent.resolve()
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def create_td_copy_wf(
