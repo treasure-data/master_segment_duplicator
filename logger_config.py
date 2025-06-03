@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Get the absolute path to the project directory
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(PROJECT_DIR, "poc_hub.log")
+LOG_FILE = os.path.join(PROJECT_DIR, "mscopy.log")
 
 
 class OutputLogger:

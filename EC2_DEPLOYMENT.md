@@ -128,6 +128,28 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+6. Configure Log Rotation:
+
+```bash
+# Copy logrotate configuration
+sudo cp /opt/mscopy/mscopy_logrotate.conf /etc/logrotate.d/mscopy
+
+# Test the configuration
+sudo logrotate -d /etc/logrotate.d/mscopy
+
+# Set proper permissions
+sudo chown root:root /etc/logrotate.d/mscopy
+sudo chmod 644 /etc/logrotate.d/mscopy
+```
+
+The logrotate configuration will:
+
+-   Rotate access.log and error.log daily
+-   Keep 7 days of logs
+-   Compress old logs
+-   Create new log files with proper permissions
+-   Reload the mscopy service after rotation to ensure proper log handling
+
 ## 3. Application Setup
 
 1. Create application directory:
@@ -296,7 +318,7 @@ curl http://localhost:8000
     - Check for any errors in:
         ```bash
         tail -f /opt/mscopy/logs/error.log
-        tail -f /opt/mscopy/poc_hub.log
+        tail -f /opt/mscopy/mscopy.log
         ```
 
 ## 7. Maintenance Commands

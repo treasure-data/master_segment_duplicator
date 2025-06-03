@@ -2,17 +2,16 @@
 
 # Rotate logs script for production environment
 # This script:
-# 1. Rotates application logs (poc_hub.log)
-# 2. Handles any additional logs not managed by Supervisor
-# 3. Compresses old logs
-# 4. Keeps last 5 rotations
+# 1. Rotates application log (mscopy.log) only
+# 2. Compresses old logs
+# 3. Keeps last 7 rotations
 #
-# Note: Gunicorn/Supervisor logs are handled by Supervisor's own log rotation
+# Note: System logs (access.log, error.log) should be handled by systemd/logrotate
 
 # Configuration
 MAX_BACKUPS=7 # Keep 7 days of logs
 LOG_DIR="logs"
-APP_LOG="poc_hub.log"
+APP_LOG="mscopy.log"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Ensure logs directory exists
@@ -48,22 +47,14 @@ rotate_log() {
         echo "Log rotated at $TIMESTAMP" >"$log_file"
     fi
 
-    # Remove old backups (beyond MAX_BACKUPS)
-    find "$dir_name" -name "${base_name}.*" -mtime +30 -delete
+    # Remove backups older than 7 days
+    find "$dir_name" -name "${base_name}.*" -mtime +7 -delete
 }
 
-# Rotate application log
+# Rotate only the application log
 if [ -f "$APP_LOG" ]; then
     rotate_log "$APP_LOG"
+    echo "Log rotation completed for $APP_LOG at $TIMESTAMP"
+else
+    echo "Application log $APP_LOG not found at $TIMESTAMP"
 fi
-
-# Rotate any additional logs in the logs directory
-# (excluding supervisor-managed logs)
-for log_file in "$LOG_DIR"/*.log; do
-    # Skip supervisor-managed logs
-    if [[ "$log_file" != *"supervisor"* ]] && [ -f "$log_file" ]; then
-        rotate_log "$log_file"
-    fi
-done
-
-echo "Log rotation completed at $TIMESTAMP"

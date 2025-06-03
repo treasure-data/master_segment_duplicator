@@ -27,7 +27,7 @@ For detailed EC2 deployment instructions, see [EC2_DEPLOYMENT.md](EC2_DEPLOYMENT
 
 ### Logging System
 
--   Application logs (`poc_hub.log`)
+-   Application logs (`mscopy.log`)
 -   Gunicorn access and error logs
 -   Supervisor process logs
 -   Automatic log rotation
@@ -160,7 +160,7 @@ supervisorctl tail mscopy
 
 Logs are stored in:
 
--   `poc_hub.log`: Application logs
+-   `mscopy.log`: Application logs
 -   `logs/access.log`: Gunicorn access logs
 -   `logs/error.log`: Gunicorn error logs
 -   `logs/supervisor_mscopy.log`: Supervisor process logs
@@ -187,7 +187,7 @@ Add to crontab for automatic rotation:
 ### Monitoring
 
 1. Process monitoring through Supervisor
-2. Application logs in `poc_hub.log`
+2. Application logs in `mscopy.log`
 3. Access logs for request tracking
 4. Error logs for issue detection
 
@@ -225,7 +225,7 @@ Production environment variables:
 1. Check logs:
 
 ```bash
-tail -f poc_hub.log
+tail -f mscopy.log
 tail -f logs/error.log
 ```
 
