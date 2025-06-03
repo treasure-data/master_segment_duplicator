@@ -34,7 +34,17 @@ sudo dnf update -y
 sudo apt update && sudo apt upgrade -y
 ```
 
-2. Install Python 3 and development tools:
+2. Install Git:
+
+```bash
+# For Amazon Linux 2023
+sudo dnf install -y git
+
+# For Ubuntu
+sudo apt install -y git
+```
+
+3. Install Python 3 and development tools:
 
 ```bash
 # For Amazon Linux 2023
@@ -44,7 +54,7 @@ sudo dnf install -y python3 python3-pip python3-devel
 sudo apt install -y python3 python3-pip python3-venv
 ```
 
-3. Install Node.js:
+4. Install Node.js:
 
 ```bash
 # For Amazon Linux 2023
