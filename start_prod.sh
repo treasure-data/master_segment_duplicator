@@ -51,7 +51,7 @@ npm run build
 mkdir -p "$LOG_DIR"
 
 # Start Gunicorn (this will be used by systemd)
-exec gunicorn \
+exec /opt/mscopy/venv/bin/gunicorn/gunicorn \
     --workers ${GUNICORN_WORKERS:-3} \
     --worker-class ${GUNICORN_WORKER_CLASS:-gevent} \
     --timeout ${GUNICORN_TIMEOUT:-120} \
