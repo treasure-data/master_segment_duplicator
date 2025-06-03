@@ -18,6 +18,14 @@ LOG_DIR="$PROJECT_DIR/logs"
 # Ensure we're in the project directory
 cd "$PROJECT_DIR"
 
+# Try to pull latest code
+echo "Pulling latest code from repository..."
+if [ -d .git ]; then
+    git pull || echo "Warning: Failed to pull latest code. Continuing with existing codebase..."
+else
+    echo "Not a git repository. Continuing with existing codebase..."
+fi
+
 # Create and activate virtual environment if it doesn't exist
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."

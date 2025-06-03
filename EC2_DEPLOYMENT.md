@@ -85,6 +85,7 @@ sudo chown ${USER}:${USER} /opt/mscopy
 cd /opt/mscopy
 git clone https://github.com/treasure-data/master_segment_duplicator.git .
 chmod +x start_prod.sh rotate_logs.sh
+mkdir logs
 ```
 
 3. Create and configure production environment:
@@ -138,6 +139,14 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable mscopy
 sudo systemctl start mscopy
+```
+
+```bash
+#other commands
+sudo systemctl stop mscopy
+sudo systemctl restart mscopy
+sudo systemctl status mscopy
+sudo journalctl -u mscopy -f  # for logs
 ```
 
 ## 4. Verify the Application
