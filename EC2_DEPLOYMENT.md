@@ -315,6 +315,7 @@ curl http://localhost:8000
 1. Set up crontab for log rotation:
 
 ```bash
+sudo dnf install -y cronie cronie-anacron
 (crontab -l 2>/dev/null; echo "0 0 * * * cd /opt/mscopy && ./rotate_logs.sh") | crontab -
 ```
 
