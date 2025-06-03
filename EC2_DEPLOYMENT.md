@@ -134,12 +134,15 @@ sudo systemctl reload nginx
 # Copy logrotate configuration
 sudo cp /opt/mscopy/mscopy_logrotate.conf /etc/logrotate.d/mscopy
 
-# Test the configuration
-sudo logrotate -d /etc/logrotate.d/mscopy
-
-# Set proper permissions
+# Set proper permissions on logrotate config
 sudo chown root:root /etc/logrotate.d/mscopy
 sudo chmod 644 /etc/logrotate.d/mscopy
+
+# Test the configuration (debug mode)
+sudo logrotate -d /etc/logrotate.d/mscopy
+
+# Force a rotation to verify it works
+sudo logrotate -f /etc/logrotate.d/mscopy
 ```
 
 The logrotate configuration will:
@@ -168,13 +171,17 @@ chmod +x start_prod.sh rotate_logs.sh
 
 # Create and setup logs directory with proper permissions
 mkdir -p logs
-sudo chown -R ec2-user:ec2-user .
-sudo chmod 755 logs
+sudo chown root:ec2-user .
+sudo chmod 755 .
+
+# Set secure permissions on logs directory
+sudo chown root:ec2-user logs
+sudo chmod 750 logs
 
 # Create log files with proper permissions
-touch logs/error.log logs/access.log
-chmod 644 logs/error.log logs/access.log
-sudo chown -R ec2-user:ec2-user logs
+sudo touch logs/error.log logs/access.log
+sudo chown ec2-user:ec2-user logs/error.log logs/access.log
+sudo chmod 640 logs/error.log logs/access.log
 ```
 
 3. Create and configure production environment:
