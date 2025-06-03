@@ -10,7 +10,7 @@
 # Note: Gunicorn/Supervisor logs are handled by Supervisor's own log rotation
 
 # Configuration
-MAX_BACKUPS=7  # Keep 7 days of logs
+MAX_BACKUPS=7 # Keep 7 days of logs
 LOG_DIR="logs"
 APP_LOG="poc_hub.log"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

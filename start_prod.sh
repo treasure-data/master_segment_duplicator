@@ -18,6 +18,12 @@ LOG_DIR="$PROJECT_DIR/logs"
 # Ensure we're in the project directory
 cd "$PROJECT_DIR"
 
+# Pull latest code
+echo "Pulling latest code from repository..."
+git clone https://github.com/treasure-data/master_segment_duplicator.git main || {
+    echo "Warning: Failed to pull latest code. Continuing with existing codebase..."
+}
+
 # Create and activate virtual environment if it doesn't exist
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."
