@@ -5,11 +5,16 @@ interface CopyFormData {
     masterSegmentId: string;
     apiKey: string;
     instance: string;
-    // outputMasterSegmentId: string;
     masterSegmentName: string;
     apiKeyOutput: string;
     copyAssets: boolean;
     copyDataAssets: boolean;
+}
+
+interface ProgressMessage {
+    type: "progress" | "error" | "success";
+    message: string;
+    operation_id: string;
 }
 
 /**
@@ -22,6 +27,9 @@ function getElement<T extends HTMLElement>(id: string): T {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Initialize Socket.IO connection
+    const socket = (window as any).io();
+
     // Get DOM elements using type-safe selector
     const elements = {
         form: getElement<HTMLFormElement>("myForm"),
@@ -51,6 +59,28 @@ document.addEventListener("DOMContentLoaded", () => {
             type === "progress" ? "block" : "none";
     }
 
+    // Socket.IO event handlers
+    socket.on("connect", () => {
+        console.log("Connected to server");
+    });
+
+    socket.on("disconnect", () => {
+        console.log("Disconnected from server");
+        updateStatus("Connection lost", "Attempting to reconnect...", "error");
+    });
+
+    socket.on("copy_progress", (data: ProgressMessage) => {
+        updateStatus(
+            data.type === "error"
+                ? "Error Occurred"
+                : data.type === "success"
+                ? "Success!"
+                : "Processing...",
+            data.message,
+            data.type
+        );
+    });
+
     /**
      * Collects form data in a type-safe manner
      */
@@ -60,7 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 getElement<HTMLInputElement>("masterSegmentId").value,
             apiKey: getElement<HTMLInputElement>("apiKey").value,
             instance: getElement<HTMLSelectElement>("instance").value,
-            // outputMasterSegmentId: getElement<HTMLInputElement>("outputMasterSegmentId").value,
             masterSegmentName:
                 getElement<HTMLInputElement>("masterSegmentName").value,
             apiKeyOutput: getElement<HTMLInputElement>("apiKeyOutput").value,
@@ -77,64 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const formData = getFormData();
-
-            // Create single EventSource connection with JSON POST request
-            const response = await fetch("/submit", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(formData),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const reader = response.body?.getReader();
-            const decoder = new TextDecoder();
-
-            while (reader) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value);
-                const lines = chunk.split("\n");
-
-                for (const line of lines) {
-                    if (line.startsWith("data: ")) {
-                        const eventData = line.slice(6);
-                        try {
-                            const data = JSON.parse(eventData);
-                            const type = data.type as
-                                | "error"
-                                | "success"
-                                | "progress";
-                            updateStatus(
-                                data.type === "error"
-                                    ? "Error Occurred"
-                                    : data.type === "success"
-                                    ? "Success!"
-                                    : "Processing...",
-                                data.message,
-                                type
-                            );
-
-                            if (type === "success" || type === "error") {
-                                reader.cancel();
-                            }
-                        } catch (e) {
-                            console.error("Error parsing event data:", e);
-                            updateStatus(
-                                "Error Occurred",
-                                "Failed to parse server response",
-                                "error"
-                            );
-                            reader.cancel();
-                        }
-                    }
-                }
-            }
+            socket.emit("start_copy", formData);
         } catch (error) {
             console.error("Error starting process:", error);
             updateStatus(

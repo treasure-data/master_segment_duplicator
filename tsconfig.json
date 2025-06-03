@@ -3,9 +3,9 @@
     "target": "ES2017",
     "lib": ["ES2017", "DOM"],
     "outDir": "static",
-    "module": "commonjs",
+    "module": "none",
     "strict": true,
-    "esModuleInterop": true
+    "noImplicitAny": false
   },
   "include": ["static/script.ts"],
   "exclude": []

@@ -20,7 +20,7 @@ CLI Usage:
   python copier.py \\
          <src_parent_id> <src_api_key> \\
          <instance> \\
-         <dst_parent_id> <dst_parent_name> <dst_api_key> \\
+         <dst_parent_name> <dst_api_key> \\
          <copy_assets_flag> <copy_data_assets_flag>
 
 Dependencies:
@@ -71,24 +71,13 @@ import tarfile
 import io
 import uuid
 from parent_segment_api import ps_check_and_update
+from logger_config import setup_logging
 
-
-# Set up logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-    handlers=[
-        logging.FileHandler("poc_hub.log"),
-        logging.StreamHandler(),  # This will output to stdout as well
-    ],
-    force=True,  # Override any existing logging configuration
-)
+# Initialize logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
-# Set stdout to line buffering for real-time output
-import sys
-
-sys.stdout.reconfigure(line_buffering=True)
+# Use print with flush=True for real-time output
 
 # API Configuration Constants
 TD_MIME = "application/vnd.treasuredata.v1+json"
@@ -178,14 +167,17 @@ class TDClient:
         Raises:
             requests.exceptions.RequestException: For any API request failures
         """
+        print(f"🔗 Preparing {method} request to {path} with API key: {self.api_key}")
         self.rate_limiter.wait()
+        print(f"⏳ Rate limit wait complete, proceeding with {method} request")
         url = f"{self.base_url}/{path.lstrip('/')}"
         headers = {"Authorization": f"TD1 {self.api_key}", "Content-Type": TD_MIME}
         headers.update(kwargs.pop("headers", {}))
-
+        print(f"🔗 Making {method} request to {url} with headers: {headers}")
         try:
             response = self.session.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
+            print(f"✅ Received response: {response.status_code} from {url}")
             return response.json() if response.content else {}
         except requests.exceptions.RequestException as e:
             print(f"⚠️  API request failed: {e}")
@@ -1100,16 +1092,20 @@ def copy_folders_segments(
 
                     original_name = ent["attributes"]["name"]
                     try:
+                        print(f"/n testing0")
                         # Try with original name first
                         result = dst_client.request(
                             "POST", "entities/folders", json=ent
                         )
+                        print(f"/n testing0.0")
                     except requests.exceptions.RequestException as e:
+                        print(f"/n testing0.1")
                         if (
                             hasattr(e.response, "status_code")
                             and e.response.status_code == 400
                             and "Name has already been taken" in e.response.text
                         ):
+                            print(f"/n testing0.2")
                             # If name conflict, add suffix and retry
                             ent["attributes"][
                                 "name"
@@ -1117,14 +1113,19 @@ def copy_folders_segments(
                             print(
                                 f"    Note: Renaming folder to {ent['attributes']['name']} due to name conflict"
                             )
+                            print(f"/n testing1")
                             result = dst_client.request(
                                 "POST", "entities/folders", json=ent
                             )
+                            # print(
+                            #     f"    Note: Renaming folder id  {result["data"]["id"]} due to name conflict"
+                            # )
                         else:
                             raise
-
+                    print(f"/n testing2")
                     new_id = result["data"]["id"]
                     folders_map[fid] = new_id
+                    print(f"/n testing3")
                     print(
                         f"    [{i}/{len(folder_entities)}] {ent['attributes']['name']}  →  {new_id}"
                     )
@@ -1418,15 +1419,13 @@ def main():
         # orig["id"], orig["name"] = dst_parent, dst_name
         orig["id"], orig["name"] = None, dst_name
         # dst_client.request("PUT", f"audiences/{dst_parent}", json=orig)
-        ps_check_and_update(dst_client, json.dumps(orig))
+        audience_id, _, _ = ps_check_and_update(dst_client, orig)
         print("✅ Parent segment copy phase completed")
 
         # 4. Copy folders & segments if requested
         if copy_assets:
             print("\n📁 Starting folder and segment copy phase...")
-            audience_id, _, _ = copy_folders_segments(
-                src_client, dst_client, src_parent, audience_id
-            )
+            copy_folders_segments(src_client, dst_client, src_parent, audience_id)
             print("✅ Folder and segment copy phase completed")
         else:
             print("\nℹ️  Skipping folders/segments phase (copy_assets=False)")

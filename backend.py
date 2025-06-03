@@ -1,130 +1,92 @@
 """
 backend.py
 ---------
-FastAPI-based web server that provides a web interface and API endpoints for
+Flask-based web server that provides a web interface and API endpoints for
 the Treasure Data segment copying tool.
 
 This module serves as the bridge between the web frontend and the copier.py script.
 It provides:
 1. Static file serving for web assets
 2. HTML template serving for the main interface
-3. Streaming API endpoint for segment copy operations
-4. Real-time progress updates via server-sent events
+3. Real-time updates via Socket.IO for segment copy operations
+4. Reliable message delivery with automatic reconnection
 """
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-import asyncio
-import json
 import os
-from typing import AsyncGenerator, Optional
+import json
+from dataclasses import dataclass
+from subprocess import Popen, PIPE
+from flask import Flask, render_template, send_from_directory, request
+from flask_socketio import SocketIO, emit
 
 
-# Define request model
-class CopyRequest(BaseModel):
+# Data model for copy request
+@dataclass
+class CopyRequest:
     masterSegmentId: str
     apiKey: str
     instance: str
-    # outputMasterSegmentId: str
     masterSegmentName: str
     apiKeyOutput: str
-    copyAssets: bool = False  # Default value and explicit type
-    copyDataAssets: bool = False  # Default value and explicit type
+    copyAssets: bool = False
+    copyDataAssets: bool = False
 
-    class Config:
-        json_encoders = {
-            bool: lambda v: str(v).lower()  # Convert boolean to lowercase string
-        }
-
-
-app = FastAPI(
-    title="Treasure Data Segment Copier",
-    description="Web interface for copying Treasure Data segments between environments",
-    version="1.0.0",
-)
-
-# Serve static files (JavaScript, CSS, images) from the static directory
-app.mount("/static", StaticFiles(directory="static"), name="static")
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            masterSegmentId=data["masterSegmentId"],
+            apiKey=data["apiKey"],
+            instance=data["instance"],
+            masterSegmentName=data["masterSegmentName"],
+            apiKeyOutput=data["apiKeyOutput"],
+            copyAssets=bool(data.get("copyAssets", False)),
+            copyDataAssets=bool(data.get("copyDataAssets", False)),
+        )
 
 
-@app.get("/", response_class=HTMLResponse)
-def get_form():
-    """
-    Serves the main HTML interface for the segment copier tool.
-
-    Returns:
-        str: HTML content of the main interface
-    """
-    with open("templates/index.html", "r", encoding="utf-8") as f:
-        return f.read()
+# Initialize Flask and Socket.IO
+app = Flask(__name__, static_folder="static", template_folder="templates")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
-@app.get("/favicon.ico")
-async def favicon():
-    """
-    Serves the favicon.ico file from the static directory.
-
-    Returns:
-        FileResponse: The favicon file response
-    """
-    return FileResponse("static/favicon.ico")
+@app.route("/")
+def index():
+    """Serve the main HTML interface."""
+    return render_template("index.html")
 
 
-async def process_stream(proc) -> AsyncGenerator[str, None]:
-    """Process stdout/stderr streams and yield formatted updates."""
+@app.route("/favicon.ico")
+def favicon():
+    """Serve the favicon."""
+    return send_from_directory(app.static_folder, "favicon.ico")
+
+
+def process_stream(proc, operation_id: str):
+    """Process stdout/stderr streams and emit updates via Socket.IO."""
     try:
 
-        async def read_stream(stream, is_stderr=False):
-            while True:
-                try:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    text = line.decode().strip()
+        def read_stream(stream, is_stderr=False):
+            for line in stream:
+                if line:
+                    text = line.strip()
                     if text:
-                        if is_stderr:
-                            yield json.dumps(
-                                {"type": "error", "message": f"Error: {text}"}
-                            )
-                        else:
-                            yield json.dumps(
-                                {
-                                    "type": "progress" if "⚠️" not in text else "error",
-                                    "message": text,
-                                }
-                            )
-                except Exception as e:
-                    print(f"Stream read error: {e}")
-                    break
+                        data = {
+                            "type": "error" if is_stderr else "progress",
+                            "message": f"Error: {text}" if is_stderr else text,
+                            "operation_id": operation_id,
+                        }
+                        socketio.emit("copy_progress", data)
 
-        # Create separate tasks for reading stdout and stderr
-        stdout_gen = read_stream(proc.stdout)
-        stderr_gen = read_stream(proc.stderr, is_stderr=True)
-
-        async def merge_streams():
-            async def safe_aiter(agen):
-                try:
-                    async for item in agen:
-                        yield item
-                except Exception as e:
-                    print(f"Stream iteration error: {e}")
-
-            # Merge both streams
-            async for result in safe_aiter(stdout_gen):
-                yield result
-            async for result in safe_aiter(stderr_gen):
-                yield result
-
-        async for item in merge_streams():
-            yield item
+        # Read from both streams
+        read_stream(proc.stdout)
+        read_stream(proc.stderr, is_stderr=True)
 
         # Wait for process to complete and capture return code
-        return_code = await proc.wait()
+        return_code = proc.wait()
 
-        # Send final status after all stream processing is done
-        yield json.dumps(
+        # Send final status
+        socketio.emit(
+            "copy_progress",
             {
                 "type": "success" if return_code == 0 else "error",
                 "message": (
@@ -132,135 +94,78 @@ async def process_stream(proc) -> AsyncGenerator[str, None]:
                     if return_code == 0
                     else f"Process failed with exit code {return_code}"
                 ),
-            }
-        )
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Stream processing error: {error_msg}")
-        yield json.dumps(
-            {"type": "error", "message": f"Error processing stream: {error_msg}"}
-        )
-
-
-# @app.get("/submit")
-# async def submit_form(
-#     request: Request,
-#     masterSegmentId: str,
-#     apiKey: str,
-#     instance: str,
-#     # outputMasterSegmentId: str,
-#     masterSegmentName: str,
-#     apiKeyOutput: str,
-#     copyAssets: bool,
-#     copyDataAssets: bool,
-# ):
-#     """
-#     Handles form submission via query parameters and streams responses.
-
-#     Args:
-#         request: FastAPI request object
-#         masterSegmentId: ID of the master segment
-#         apiKey: API key for authentication
-#         instance: Instance name
-#         outputMasterSegmentId: ID of the output master segment
-#         masterSegmentName: Name of the master segment
-#         apiKeyOutput: API key for the output environment
-#         copyAssets: Flag to copy assets
-#         copyDataAssets: Flag to copy data assets
-
-#     Returns:
-#         StreamingResponse: Real-time progress updates
-#     """
-#     try:
-#         # Create subprocess running the copier script
-#         proc = await asyncio.create_subprocess_exec(
-#             "python3",
-#             "copier.py",
-#             masterSegmentId,
-#             apiKey,
-#             instance,
-#             # outputMasterSegmentId,
-#             masterSegmentName,
-#             apiKeyOutput,
-#             str(copyAssets).lower(),
-#             str(copyDataAssets).lower(),
-#             stdout=asyncio.subprocess.PIPE,
-#             stderr=asyncio.subprocess.PIPE,
-#         )
-
-#         async def event_generator():
-#             async for data in process_stream(proc):
-#                 yield f"data: {data}\n\n"
-
-#         # Return streaming response with proper SSE format
-#         return StreamingResponse(
-#             event_generator(),
-#             media_type="text/event-stream",
-#             headers={
-#                 "Cache-Control": "no-cache",
-#                 "Connection": "keep-alive",
-#             },
-#         )
-
-#     except Exception as e:
-#         error_message = f"Failed to start process: {str(e)}"
-#         error_json = json.dumps({"type": "error", "message": error_message})
-#         # Return immediate error response for startup failures
-#         return StreamingResponse(
-#             iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
-#         )
-
-
-@app.post("/submit")
-async def submit_form(request: CopyRequest):
-    """
-    Handles form submission via POST request and streams responses.
-
-    Args:
-        request (CopyRequest): The copy request parameters
-
-    Returns:
-        StreamingResponse: Real-time progress updates
-    """
-    try:
-        # Create subprocess running the copier script
-        proc = await asyncio.create_subprocess_exec(
-            "python3",
-            "copier.py",
-            request.masterSegmentId,
-            request.apiKey,
-            request.instance,
-            # request.outputMasterSegmentId,
-            request.masterSegmentName,
-            request.apiKeyOutput,
-            str(
-                request.copyAssets
-            ).lower(),  # Ensure boolean is converted to lowercase string
-            str(
-                request.copyDataAssets
-            ).lower(),  # Ensure boolean is converted to lowercase string
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        async def event_generator():
-            async for data in process_stream(proc):
-                yield f"data: {data}\n\n"
-
-        # Return streaming response with proper SSE format
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
+                "operation_id": operation_id,
             },
         )
 
     except Exception as e:
-        error_message = f"Failed to start process: {str(e)}"
-        error_json = json.dumps({"type": "error", "message": error_message})
-        # Return immediate error response for startup failures
-        return StreamingResponse(
-            iter([f"data: {error_json}\n\n"]), media_type="text/event-stream"
+        error_msg = str(e)
+        print(f"Stream processing error: {error_msg}")
+        socketio.emit(
+            "copy_progress",
+            {
+                "type": "error",
+                "message": f"Error processing stream: {error_msg}",
+                "operation_id": operation_id,
+            },
         )
+
+
+@socketio.on("connect")
+def handle_connect():
+    print("Client connected")
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    print("Client disconnected")
+
+
+@socketio.on("start_copy")
+def handle_copy_request(data):
+    """Handle copy request from client via Socket.IO."""
+    try:
+        request = CopyRequest.from_dict(data)
+
+        # Create subprocess running the copier script
+        proc = Popen(
+            [
+                "python3",
+                "copier.py",
+                request.masterSegmentId,
+                request.apiKey,
+                request.instance,
+                request.masterSegmentName,
+                request.apiKeyOutput,
+                str(request.copyAssets).lower(),
+                str(request.copyDataAssets).lower(),
+            ],
+            stdout=PIPE,
+            stderr=PIPE,
+            bufsize=1,  # Line buffered
+            universal_newlines=True,
+        )
+
+        # Generate a unique operation ID
+        operation_id = f"copy_{request.masterSegmentId}_{request.masterSegmentName}"
+
+        # Process the output streams
+        process_stream(proc, operation_id)
+
+    except Exception as e:
+        error_message = f"Failed to start process: {str(e)}"
+        emit(
+            "copy_progress",
+            {"type": "error", "message": error_message, "operation_id": "error"},
+        )
+
+
+if __name__ == "__main__":
+    # Using threading mode and disabling reloader for stability
+    socketio.run(
+        app,
+        host="0.0.0.0",  # Allow external connections
+        port=8000,  # Use port 8000
+        debug=True,
+        use_reloader=False,
+    )
