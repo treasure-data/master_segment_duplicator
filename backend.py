@@ -44,9 +44,22 @@ class CopyRequest:
         )
 
 
+# Load configuration
+from config import config
+
 # Initialize Flask and Socket.IO
-app = Flask(__name__, static_folder="static", template_folder="templates")
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+app = Flask(
+    __name__, static_folder=config.STATIC_DIR, template_folder=config.TEMPLATE_DIR
+)
+app.config.from_object(config)
+
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=config.CORS_ORIGINS,
+    async_mode="threading",
+    logger=config.DEBUG,
+    engineio_logger=config.DEBUG,
+)
 
 
 @app.route("/")

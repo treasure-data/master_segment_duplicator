@@ -59,3 +59,4 @@ run_*.log.json
 # Project specific
 __pycache__/
 static/script.js
+venv/

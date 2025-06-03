@@ -27,8 +27,16 @@ function getElement<T extends HTMLElement>(id: string): T {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Initialize Socket.IO connection
-    const socket = (window as any).io();
+    // Initialize Socket.IO connection with production settings
+    const socket = window.io({
+        transports: ["websocket", "polling"], // Prefer WebSocket
+        path: "/socket.io", // Default Socket.IO path
+        reconnection: true, // Enable reconnection
+        reconnectionAttempts: 5, // Limit reconnection attempts
+        reconnectionDelay: 3000, // Start with 3 sec delay
+        reconnectionDelayMax: 15000, // Maximum delay between reconnections
+        timeout: 60000, // Increased connection timeout
+    });
 
     // Get DOM elements using type-safe selector
     const elements = {
@@ -45,8 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
      */
     function setSubmitButtonState(isLoading: boolean): void {
         elements.submitButton.disabled = isLoading;
-        elements.submitButton.querySelector('.button-text')!.textContent = 
-            isLoading ? 'Processing...' : 'Submit';
+        elements.submitButton.querySelector(".button-text")!.textContent =
+            isLoading ? "Processing..." : "Submit";
     }
 
     /**
@@ -94,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
             data.message,
             data.type
         );
-        
+
         // Re-enable the submit button on completion
         if (data.type === "success" || data.type === "error") {
             setSubmitButtonState(false);
@@ -122,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.form.addEventListener("submit", async (event: Event) => {
         event.preventDefault();
         elements.statusContent.textContent = "";
-        
+
         // Set button to loading state
         setSubmitButtonState(true);
         updateStatus("Starting process...");

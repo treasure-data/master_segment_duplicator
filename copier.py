@@ -29,9 +29,7 @@ Dependencies:
 - td_connector: Custom module for data asset operations
 """
 import sys, json, time, requests, networkx as nx
-import subprocess
 import os
-import tempfile
 import shutil
 import logging
 import tarfile
@@ -58,13 +56,8 @@ import os
 import tarfile
 import io
 import uuid
-import requests
 from typing import Set, Tuple
-from urllib3.util import Retry
-from requests.adapters import HTTPAdapter
 import os
-import subprocess
-import tempfile
 import shutil
 import logging
 import tarfile
