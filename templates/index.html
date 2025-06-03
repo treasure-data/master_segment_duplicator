@@ -105,6 +105,34 @@
       background: linear-gradient(90deg, #005bb5, #581eac);
     }
 
+    /* Button loading state */
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      background: linear-gradient(90deg, #667788, #999999);
+    }
+    
+    .button-content {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .button-spinner {
+      display: none;
+      width: 16px;
+      height: 16px;
+      margin-left: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    button[disabled] .button-spinner {
+      display: inline-block;
+    }
+
     #message {
       margin-top: 24px;
       text-align: center;
@@ -223,7 +251,12 @@
         Copy Data Assets (Databases, Tables, etc..)
       </label>
 
-      <button type="submit">Submit</button>
+      <button type="submit" id="submitButton">
+        <span class="button-content">
+          <span class="button-text">Submit</span>
+          <span class="button-spinner"></span>
+        </span>
+      </button>
     </form>
 
     <div id="status-box" class="status-box">

@@ -37,7 +37,17 @@ document.addEventListener("DOMContentLoaded", () => {
         statusTitle: getElement<HTMLSpanElement>("status-title"),
         statusContent: getElement<HTMLDivElement>("status-content"),
         statusSpinner: getElement<HTMLDivElement>("status-spinner"),
+        submitButton: getElement<HTMLButtonElement>("submitButton"),
     };
+
+    /**
+     * Set the loading state of the submit button
+     */
+    function setSubmitButtonState(isLoading: boolean): void {
+        elements.submitButton.disabled = isLoading;
+        elements.submitButton.querySelector('.button-text')!.textContent = 
+            isLoading ? 'Processing...' : 'Submit';
+    }
 
     /**
      * Updates the status display with new information
@@ -57,16 +67,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         elements.statusSpinner.style.display =
             type === "progress" ? "block" : "none";
+
+        // Enable/disable submit button based on status type
+        setSubmitButtonState(type === "progress");
     }
 
     // Socket.IO event handlers
     socket.on("connect", () => {
         console.log("Connected to server");
+        setSubmitButtonState(false);
     });
 
     socket.on("disconnect", () => {
         console.log("Disconnected from server");
         updateStatus("Connection lost", "Attempting to reconnect...", "error");
+        setSubmitButtonState(false);
     });
 
     socket.on("copy_progress", (data: ProgressMessage) => {
@@ -79,6 +94,11 @@ document.addEventListener("DOMContentLoaded", () => {
             data.message,
             data.type
         );
+        
+        // Re-enable the submit button on completion
+        if (data.type === "success" || data.type === "error") {
+            setSubmitButtonState(false);
+        }
     });
 
     /**
@@ -102,6 +122,9 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.form.addEventListener("submit", async (event: Event) => {
         event.preventDefault();
         elements.statusContent.textContent = "";
+        
+        // Set button to loading state
+        setSubmitButtonState(true);
         updateStatus("Starting process...");
 
         try {
@@ -116,6 +139,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 }`,
                 "error"
             );
+            // Reset button state on error
+            setSubmitButtonState(false);
         }
     });
 });
