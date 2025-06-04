@@ -17,6 +17,11 @@ interface ProgressMessage {
     operation_id: string;
 }
 
+interface ValidationMessage {
+    field: string;
+    message: string;
+}
+
 /**
  * Type-safe element selector
  */
@@ -46,15 +51,161 @@ document.addEventListener("DOMContentLoaded", () => {
         statusContent: getElement<HTMLDivElement>("status-content"),
         statusSpinner: getElement<HTMLDivElement>("status-spinner"),
         submitButton: getElement<HTMLButtonElement>("submitButton"),
+        inputFields: {
+            masterSegmentId: getElement<HTMLInputElement>("masterSegmentId"),
+            apiKey: getElement<HTMLInputElement>("apiKey"),
+            instance: getElement<HTMLSelectElement>("instance"),
+            masterSegmentName:
+                getElement<HTMLInputElement>("masterSegmentName"),
+            apiKeyOutput: getElement<HTMLInputElement>("apiKeyOutput"),
+            copyAssets: getElement<HTMLInputElement>("copyAssets"),
+            copyDataAssets: getElement<HTMLInputElement>("copyDataAssets"),
+        },
     };
+
+    // Create validation message containers for each input
+    Object.entries(elements.inputFields).forEach(([key, input]) => {
+        if (key !== "copyAssets" && key !== "copyDataAssets") {
+            const messageDiv = document.createElement("div");
+            messageDiv.className = "validation-message";
+            messageDiv.id = `${key}-validation`;
+            input.parentNode?.insertBefore(messageDiv, input.nextSibling);
+        }
+    });
+
+    // Track if fields have been touched
+    const touchedFields = new Set<string>();
+
+    function validateForm(showMessages: boolean = false): ValidationMessage[] {
+        const errors: ValidationMessage[] = [];
+        const inputApiKey = elements.inputFields.apiKey.value.trim();
+        const outputApiKey = elements.inputFields.apiKeyOutput.value.trim();
+
+        // Clear existing validation messages and styles
+        document.querySelectorAll(".validation-message").forEach((el) => {
+            el.textContent = "";
+            el.classList.remove("show");
+        });
+        document.querySelectorAll("input").forEach((input) => {
+            input.classList.remove("error");
+        });
+
+        // Required field validation - only show errors for touched fields
+        Object.entries(elements.inputFields).forEach(([key, input]) => {
+            if (
+                key !== "copyAssets" &&
+                key !== "copyDataAssets" &&
+                !input.value.trim() &&
+                (showMessages || touchedFields.has(key))
+            ) {
+                errors.push({
+                    field: key,
+                    message: `${input.previousElementSibling?.textContent?.replace(
+                        ":",
+                        ""
+                    )} is required`,
+                });
+            }
+        });
+
+        // API key validation - only when both fields have values
+        if (inputApiKey && outputApiKey) {
+            if (inputApiKey === outputApiKey) {
+                errors.push({
+                    field: "apiKey",
+                    message: "Input and Output API Keys must be different",
+                });
+                errors.push({
+                    field: "apiKeyOutput",
+                    message: "Input and Output API Keys must be different",
+                });
+                if (
+                    showMessages ||
+                    (touchedFields.has("apiKey") &&
+                        touchedFields.has("apiKeyOutput"))
+                ) {
+                    elements.inputFields.apiKey.classList.add("error");
+                    elements.inputFields.apiKeyOutput.classList.add("error");
+                }
+            }
+        }
+
+        // Only show validation messages if showMessages is true or the field has been touched
+        errors.forEach((error) => {
+            const messageEl = document.getElementById(
+                `${error.field}-validation`
+            );
+            if (messageEl && (showMessages || touchedFields.has(error.field))) {
+                messageEl.textContent = error.message;
+                messageEl.classList.add("show");
+            }
+        });
+
+        return errors;
+    }
+
+    // Add validation styles
+    const style = document.createElement("style");
+    style.textContent = `
+        .validation-message {
+            color: #dc2626;
+            font-size: 0.875rem;
+            margin-top: 4px;
+            margin-bottom: 10px;
+            display: none;
+            opacity: 0;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .validation-message.show {
+            display: block;
+            opacity: 1;
+        }
+
+        input.error {
+            border-color: #dc2626 !important;
+            background-color: #fef2f2 !important;
+            transition: all 0.2s ease-in-out;
+        }
+
+        input.error:focus {
+            border-color: #dc2626 !important;
+            box-shadow: 0 0 0 1px #dc2626 !important;
+            outline: none;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Real-time validation
+    Object.entries(elements.inputFields).forEach(([key, input]) => {
+        input.addEventListener("blur", () => {
+            // Mark field as touched when user leaves it
+            touchedFields.add(key);
+            const errors = validateForm(false);
+            elements.submitButton.disabled = errors.length > 0;
+        });
+
+        input.addEventListener("input", () => {
+            if (touchedFields.has(key)) {
+                const errors = validateForm(false);
+                elements.submitButton.disabled = errors.length > 0;
+            }
+        });
+    });
 
     /**
      * Set the loading state of the submit button
      */
     function setSubmitButtonState(isLoading: boolean): void {
         elements.submitButton.disabled = isLoading;
-        elements.submitButton.querySelector(".button-text")!.textContent =
-            isLoading ? "Processing..." : "Submit";
+        const buttonText = elements.submitButton.querySelector(".button-text");
+        const buttonSpinner = elements.submitButton.querySelector(
+            ".button-spinner"
+        ) as HTMLElement;
+        if (buttonText)
+            buttonText.textContent = isLoading ? "Processing..." : "Submit";
+        if (buttonSpinner)
+            buttonSpinner.style.display = isLoading ? "inline-block" : "none";
     }
 
     /**
@@ -127,28 +278,26 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    elements.form.addEventListener("submit", async (event: Event) => {
+    // Initial form validation
+    elements.submitButton.disabled = true;
+
+    // Form submission
+    elements.form.addEventListener("submit", (event) => {
         event.preventDefault();
-        elements.statusContent.textContent = "";
+        // Mark all fields as touched when attempting to submit
+        Object.keys(elements.inputFields).forEach((key) =>
+            touchedFields.add(key)
+        );
+        const errors = validateForm(true); // Show all validation messages on submit
 
-        // Set button to loading state
-        setSubmitButtonState(true);
-        updateStatus("Starting process...");
-
-        try {
-            const formData = getFormData();
-            socket.emit("start_copy", formData);
-        } catch (error) {
-            console.error("Error starting process:", error);
-            updateStatus(
-                "Error Occurred",
-                `An error occurred: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
-                "error"
-            );
-            // Reset button state on error
-            setSubmitButtonState(false);
+        if (errors.length > 0) {
+            elements.submitButton.disabled = true;
+            return;
         }
+
+        const formData = getFormData();
+        socket.emit("start_copy", formData);
+        setSubmitButtonState(true);
+        updateStatus("Starting", "Initializing copy process...", "progress");
     });
 });
