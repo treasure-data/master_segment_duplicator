@@ -61,3 +61,6 @@ __pycache__/
 static/script.js
 venv/
 *.pem
+
+# node Dependencies
+node_modules/
