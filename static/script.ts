@@ -78,16 +78,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function validateForm(showMessages: boolean = false): ValidationMessage[] {
         const errors: ValidationMessage[] = [];
+        const warnings: ValidationMessage[] = [];
         const inputApiKey = elements.inputFields.apiKey.value.trim();
         const outputApiKey = elements.inputFields.apiKeyOutput.value.trim();
 
         // Clear existing validation messages and styles
         document.querySelectorAll(".validation-message").forEach((el) => {
             el.textContent = "";
-            el.classList.remove("show");
+            el.classList.remove("show", "warning");
         });
         document.querySelectorAll("input").forEach((input) => {
-            input.classList.remove("error");
+            input.classList.remove("error", "warning");
         });
 
         // Required field validation - only show errors for touched fields
@@ -111,21 +112,47 @@ document.addEventListener("DOMContentLoaded", () => {
         // API key validation - only when both fields have values
         if (inputApiKey && outputApiKey) {
             if (inputApiKey === outputApiKey) {
-                errors.push({
+                warnings.push({
                     field: "apiKey",
-                    message: "Input and Output API Keys must be different",
+                    message:
+                        "Input and Output API Keys are same. Copy Data Assets will be disabled.",
                 });
-                errors.push({
+                warnings.push({
                     field: "apiKeyOutput",
-                    message: "Input and Output API Keys must be different",
+                    message:
+                        "Input and Output API Keys are same. Copy Data Assets will be disabled.",
                 });
                 if (
                     showMessages ||
                     (touchedFields.has("apiKey") &&
                         touchedFields.has("apiKeyOutput"))
                 ) {
-                    elements.inputFields.apiKey.classList.add("error");
-                    elements.inputFields.apiKeyOutput.classList.add("error");
+                    elements.inputFields.apiKey.classList.add("warning");
+                    elements.inputFields.apiKeyOutput.classList.add("warning");
+                    // Disable and uncheck the copyDataAssets checkbox
+                    elements.inputFields.copyDataAssets.checked = false;
+                    elements.inputFields.copyDataAssets.disabled = true;
+                    const label = document.querySelector(
+                        `label[for="copyDataAssets"]`
+                    );
+                    if (label) {
+                        label.classList.add("disabled-text");
+                    }
+                } else {
+                    elements.inputFields.apiKey.classList.remove("warning");
+                    elements.inputFields.apiKeyOutput.classList.remove(
+                        "warning"
+                    );
+
+                    // Enable the copyDataAssets checkbox when API keys are different
+                    elements.inputFields.copyDataAssets.disabled = false;
+
+                    const label = document.querySelector(
+                        `label[for="copyDataAssets"]`
+                    );
+                    if (label) {
+                        label.classList.remove("disabled-text");
+                    }
                 }
             }
         }
@@ -141,7 +168,41 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
+        // Section to display warnings
+        warnings.forEach((warning) => {
+            const messageEl = document.getElementById(
+                `${warning.field}-validation`
+            );
+            if (
+                messageEl &&
+                (showMessages || touchedFields.has(warning.field))
+            ) {
+                messageEl.textContent = warning.message;
+                messageEl.classList.add("show");
+                messageEl.classList.add("warning"); // Add warning class to message
+            }
+        });
+
         return errors;
+    }
+
+    function updateCopyDataAssetsState(): void {
+        const inputApiKey = elements.inputFields.apiKey.value.trim();
+        const outputApiKey = elements.inputFields.apiKeyOutput.value.trim();
+
+        // Enable checkbox if API keys are different or empty
+        const shouldEnable =
+            !inputApiKey || !outputApiKey || inputApiKey !== outputApiKey;
+
+        elements.inputFields.copyDataAssets.disabled = !shouldEnable;
+        const label = document.querySelector(`label[for="copyDataAssets"]`);
+        if (label) {
+            if (shouldEnable) {
+                label.classList.remove("disabled-text");
+            } else {
+                label.classList.add("disabled-text");
+            }
+        }
     }
 
     // Add validation styles
@@ -173,22 +234,50 @@ document.addEventListener("DOMContentLoaded", () => {
             box-shadow: 0 0 0 1px #dc2626 !important;
             outline: none;
         }
+
+        input.warning {
+            border-color: #f59e0b !important;
+            background-color: #fffbeb !important;
+            transition: all 0.2s ease-in-out;
+        }
+
+        input.warning:focus {
+            border-color: #f59e0b !important;
+            box-shadow: 0 0 0 1px #f59e0b !important;
+            outline: none;
+        }
+
+        .validation-message.warning {
+            color: #f59e0b;
+        }
+
+        .disabled-text {
+            color: #dc2626 !important;
+            opacity: 0.7;
+        }
     `;
     document.head.appendChild(style);
 
     // Real-time validation
     Object.entries(elements.inputFields).forEach(([key, input]) => {
         input.addEventListener("blur", () => {
-            // Mark field as touched when user leaves it
             touchedFields.add(key);
             const errors = validateForm(false);
             elements.submitButton.disabled = errors.length > 0;
+            // Add updateCopyDataAssetsState call for API key fields
+            if (key === "apiKey" || key === "apiKeyOutput") {
+                updateCopyDataAssetsState();
+            }
         });
 
         input.addEventListener("input", () => {
             if (touchedFields.has(key)) {
                 const errors = validateForm(false);
                 elements.submitButton.disabled = errors.length > 0;
+                // Add updateCopyDataAssetsState call for API key fields
+                if (key === "apiKey" || key === "apiKeyOutput") {
+                    updateCopyDataAssetsState();
+                }
             }
         });
     });
