@@ -71,26 +71,40 @@ def getParentSegment(client, _body):
         response = None
         URL = f"/audiences"
         response = client.request("GET", URL)
+        total_segments = len(response) if isinstance(response, list) else 0
         logger.info(
-            "getParentSegment _body['id']: %s, _body['name']: %s",
+            "getParentSegment searching through %d parent segments for id: %s, name: %s",
+            total_segments,
             _body.get("id"),
             _body.get("name"),
         )
-        for row in response:
-            logger.info(
-                "getParentSegment row['id']: %s, _body['id']: %s",
-                row["id"],
-                _body.get("id"),
-            )
+
+        # Track progress for large lists
+        for idx, row in enumerate(response):
+            # Log progress every 100 segments to avoid excessive logging
+            if idx > 0 and idx % 100 == 0:
+                logger.info(
+                    "getParentSegment progress: checked %d/%d parent segments",
+                    idx,
+                    total_segments,
+                )
+
             if _body.get("id") and str(row["id"]) == str(_body["id"]):
-                logger.info("Found Parent Segment by id %s", row.get("id"))
+                logger.info(
+                    "Found Parent Segment by id %s at position %d", row.get("id"), idx
+                )
                 return (row.get("id"), row.get("name"), "selected")
             elif (
                 not _body.get("id")
                 and _body.get("name")
                 and str(row["name"]) == str(_body["name"])
             ):
-                logger.info("Found Parent Segment by name %s", row.get("id"))
+                logger.info(
+                    "Found Parent Segment by name '%s' (id: %s) at position %d",
+                    row.get("name"),
+                    row.get("id"),
+                    idx,
+                )
                 return (row.get("id"), row.get("name"), "selected")
             elif not _body.get("id") and not _body.get("name"):
                 logger.warning(
@@ -98,7 +112,7 @@ def getParentSegment(client, _body):
                 )
                 break
         # No Matches
-        logger.info("Not Found Parent Segment %s", _body.get("id"))
+        logger.info("Not Found Parent Segment (searched %d segments)", total_segments)
         return None, None, "selected"
     except Exception as ex:
         logger.error(
